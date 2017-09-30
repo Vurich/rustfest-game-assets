@@ -1,3 +1,11 @@
+extern crate graphics;
+extern crate smallvec;
+extern crate cgmath;
+
+use cgmath::{Vector2, InnerSpace};
+use graphics::math;
+use smallvec::SmallVec;
+
 pub static PLAYER: &[[f64; 2]] = &[[0., 1.], [1., -1.], [0., -0.5], [-1., -1.]];
 pub static BULLET: &[[f64; 2]] = &[[0., 1.], [1., 0.], [0., -1.], [-1., 0.]];
 pub static ASTEROIDS: &[&[[f64; 2]]] = &[
@@ -52,3 +60,76 @@ pub static ASTEROIDS: &[&[[f64; 2]]] = &[
         [-0.39, 0.33],
     ],
 ];
+
+fn min_max<T: PartialOrd + Copy, I: IntoIterator<Item = T>>(iter: I) -> Option<(T, T)> {
+    let mut minmax = None;
+
+    for i in iter {
+        if let Some((ref mut min, ref mut max)) = minmax {
+            if i < *min {
+                *min = i;
+            }
+
+            if i > *max {
+                *max = i;
+            }
+        } else {
+            minmax = Some((i, i))
+        }
+    }
+
+    minmax
+}
+
+pub fn is_colliding(
+    a: &[[f64; 2]],
+    a_trans: math::Matrix2d<f64>,
+    b: &[[f64; 2]],
+    b_trans: math::Matrix2d<f64>,
+) -> bool {
+    fn any_seperated(a: &[Vector2<f64>], b: &[Vector2<f64>]) -> bool {
+        for side in a.iter().zip(a[1..].iter().chain(Some(&a[0]))) {
+            let side_vec = side.1 - side.0;
+            let axis = Vector2 {
+                x: -side_vec.y,
+                y: side_vec.x,
+            };
+
+            if let (Some((a_min, a_max)), Some((b_min, b_max))) =
+                (
+                    min_max(a.iter().map(|point| point.dot(axis))),
+                    min_max(b.iter().map(|point| point.dot(axis))),
+                )
+            {
+                if a_min > b_max || b_min > a_max {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    let a: SmallVec<[Vector2<f64>; 16]> = a.iter()
+        .map(|arr| math::transform_pos(a_trans, *arr))
+        .map(|arr| {
+            Vector2 {
+                x: arr[0],
+                y: arr[1],
+            }
+        })
+        .collect();
+    let b: SmallVec<[Vector2<f64>; 16]> = b.iter()
+        .map(|arr| math::transform_pos(b_trans, *arr))
+        .map(|arr| {
+            Vector2 {
+                x: arr[0],
+                y: arr[1],
+            }
+        })
+        .collect();
+
+    let seperated = any_seperated(&a, &b) || any_seperated(&b, &a);
+
+    !seperated
+}
